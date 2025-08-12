@@ -3,17 +3,13 @@ livekit-agents>=0.9.0
 livekit-plugins-deepgram>=0.9.0
 livekit-plugins-google>=0.9.0
 livekit-plugins-cartesia>=0.9.0
-livekit-plugins-langchain>=0.9.0
 livekit-plugins-turn_detector>=0.9.0
 livekit-plugins-noise-cancellation
 livekit-plugins-silero
 
-# LangChain and vector store
-langchain>=0.2.0
-langchain-community>=0.2.0
-langchain-core>=0.2.0
+
 faiss-cpu>=1.8.0
-langchain-huggingface
+
 
 # Additional dependencies
 python-dotenv>=1.0.0
@@ -26,7 +22,6 @@ pandas>=2.0.0
 
 
 sentence-transformers
-
 llama_index
 llama-index-embeddings-huggingface
 llama-index-llms-google-genai

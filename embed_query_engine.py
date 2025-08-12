@@ -27,10 +27,9 @@ DATA_DIR = THIS_DIR / "data"
 STORAGE_DIR = THIS_DIR / "query-engine-storage"
 HASH_FILE = STORAGE_DIR / "data_hash.txt"
 
+
 def get_data_hash(directory: Path) -> str:
-    """
-    Computes a SHA256 hash of the contents of all files in a directory.
-    """
+    """Computes a SHA256 hash of the contents of all files in a directory."""
     hasher = hashlib.sha256()
     if not directory.exists():
         return ""
@@ -46,69 +45,56 @@ def get_data_hash(directory: Path) -> str:
                 logging.warning(f"Could not read file: {filepath}")
     return hasher.hexdigest()
 
-def main():
-    """
-    Main function to check for data changes and re-embed if necessary.
-    """
-    logging.info("Starting pre-warmup embedding process...")
 
-    # Ensure storage directory exists
-    STORAGE_DIR.mkdir(exist_ok=True)
+def needs_reembedding() -> bool:
+    """Check if data needs to be re-embedded."""
+    if not (STORAGE_DIR / "docstore.json").exists():
+        return True
 
-    # Calculate current hash of the data
     current_hash = get_data_hash(DATA_DIR)
-    logging.info(f"Current data hash: {current_hash}")
-
-    # Read the stored hash
     stored_hash = ""
+
     if HASH_FILE.exists():
         with open(HASH_FILE, "r") as f:
             stored_hash = f.read().strip()
-        logging.info(f"Stored data hash: {stored_hash}")
 
-    # Compare hashes
-    if current_hash == stored_hash and (STORAGE_DIR / "docstore.json").exists():
-        logging.info("Data has not changed. Loading from existing storage.")
-        # Optional: Load the index to confirm it's valid
-        try:
-            storage_context = StorageContext.from_defaults(persist_dir=STORAGE_DIR)
-            load_index_from_storage(storage_context)
-            logging.info("Successfully loaded index from storage. Pre-warmup complete.")
-        except Exception as e:
-            logging.error(f"Failed to load index from storage, re-embedding might be needed. Error: {e}")
-        return
+    return current_hash != stored_hash
 
-    logging.info("Data has changed or storage is new. Re-embedding...")
+
+def embed_data():
+    """Embed the data and store the index."""
+    logging.info("Embedding data...")
+
+    # Ensure storage directory exists
+    STORAGE_DIR.mkdir(exist_ok=True)
 
     # Configure models
     Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
     Settings.llm = GoogleGenAI(model="gemini-2.0-flash")
 
-    # Load documents
-    try:
-        documents = SimpleDirectoryReader(DATA_DIR).load_data()
-        if not documents:
-            logging.error("No documents found in the data directory. Aborting.")
-            return
-        logging.info(f"Loaded {len(documents)} document(s).")
-    except Exception as e:
-        logging.error(f"Failed to load documents: {e}")
-        return
+    # Load and embed documents
+    documents = SimpleDirectoryReader(DATA_DIR).load_data()
+    if not documents:
+        raise ValueError("No documents found in the data directory")
 
-    # Create and persist the index
-    try:
-        index = VectorStoreIndex.from_documents(documents)
-        index.storage_context.persist(persist_dir=STORAGE_DIR)
-        logging.info("Successfully created and stored the new index.")
-    except Exception as e:
-        logging.error(f"Failed to create or persist index: {e}")
-        return
+    index = VectorStoreIndex.from_documents(documents)
+    index.storage_context.persist(persist_dir=STORAGE_DIR)
 
-    # Save the new hash
+    # Save hash
+    current_hash = get_data_hash(DATA_DIR)
     with open(HASH_FILE, "w") as f:
         f.write(current_hash)
-    logging.info(f"Updated data hash to: {current_hash}")
-    logging.info("Pre-warmup and embedding process complete.")
+
+    logging.info(f"Embedding complete. Hash: {current_hash}")
+
+
+def main():
+    """Main function to check for data changes and re-embed if necessary."""
+    if needs_reembedding():
+        embed_data()
+    else:
+        logging.info("Data unchanged. Skipping embedding.")
+
 
 if __name__ == "__main__":
     main()

@@ -2,11 +2,26 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from llama_index.core import (
-    SimpleDirectoryReader,
     StorageContext,
-    VectorStoreIndex,
     load_index_from_storage,
     Settings,
+)
+
+from livekit.agents import BackgroundAudioPlayer, AudioConfig, BuiltinAudioClip
+
+from livekit.agents import (
+    NOT_GIVEN,
+    Agent,
+    AgentFalseInterruptionEvent,
+    AgentSession,
+    JobContext,
+    JobProcess,
+    MetricsCollectedEvent,
+    RoomInputOptions,
+    RunContext,
+    WorkerOptions,
+    cli,
+    metrics,
 )
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.google_genai import GoogleGenAI
@@ -20,29 +35,30 @@ from livekit.agents import (
     cli,
     llm,
 )
-from livekit.plugins import deepgram, google, silero, cartesia
+from livekit.plugins import deepgram, google, silero, cartesia, noise_cancellation
+
+from embed_query_engine import needs_reembedding, embed_data
 
 load_dotenv()
 
-# check if storage already exists
+# Directories
 THIS_DIR = Path(__file__).parent
 PERSIST_DIR = THIS_DIR / "query-engine-storage"
 
+# Configure models
 Settings.embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
-Settings.llm = GoogleGenAI(
-    model="gemini-2.0-flash",
-)
+Settings.llm = GoogleGenAI(model="gemini-2.0-flash")
 
-if not PERSIST_DIR.exists():
-    # load the documents and create the index
-    documents = SimpleDirectoryReader(THIS_DIR / "data").load_data()
-    index = VectorStoreIndex.from_documents(documents)
-    # store it for later
-    index.storage_context.persist(persist_dir=PERSIST_DIR)
-else:
-    # load the existing index
-    storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
-    index = load_index_from_storage(storage_context)
+# Check if embedding is needed and load/create index
+# if needs_reembedding():
+#     embed_data()
+
+storage_context = StorageContext.from_defaults(persist_dir=PERSIST_DIR)
+index = load_index_from_storage(storage_context)
+
+
+def prewarm(proc: JobProcess):
+    proc.userdata["vad"] = silero.VAD.load()
 
 
 @llm.function_tool
@@ -68,11 +84,24 @@ async def entrypoint(ctx: JobContext):
         llm=google.LLM(model="gemini-2.0-flash-001"),
         stt=deepgram.STT(model="nova-3"),
         tts=cartesia.TTS(voice="6f84f4b8-58a2-430c-8c79-688dad597532"),
+        # tts=google.TTS(
+        #     gender="female",
+        #     voice_name="en-US-Standard-H",
+        # ),
         tools=[query_info],
     )
 
     session = AgentSession()
-    await session.start(agent=agent, room=ctx.room)
+    await session.start(
+        agent=agent,
+        room=ctx.room,
+        room_input_options=RoomInputOptions(
+            # LiveKit Cloud enhanced noise cancellation
+            # - If self-hosting, omit this parameter
+            # - For telephony applications, use `BVCTelephony` for best results
+            noise_cancellation=noise_cancellation.BVC(),
+        ),
+    )
 
     await session.say("Hey, how can I help you today?", allow_interruptions=True)
 
