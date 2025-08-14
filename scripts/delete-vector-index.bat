@@ -1,0 +1,1 @@
+aws s3vectors delete-index --vector-bucket-name "demo-vector-bucket-portfolio" --index-name "portfolio-index" --region "us-east-1"

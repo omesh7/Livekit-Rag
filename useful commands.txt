@@ -1,0 +1,4 @@
+aws s3vectors delete-vector-bucket --vector-bucket-name "demo-vector-bucket-portfolio"
+
+
+aws s3vectors delete-index --vector-bucket-name "amzn-s3-demo-vector-bucket" --index-name "portfolio-index"
